@@ -1,0 +1,50 @@
+name: flutter_mlkit_facemesh_example
+description: "flutter_mlkit_facemesh_example"
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  go_router: ^16.2.5
+  flutter_screenutil: ^5.9.3
+  google_mlkit_face_mesh_detection: ^0.4.1
+  google_mlkit_commons: ^0.11.0
+  camera: ^0.10.0+1
+  image: ^4.5.4
+  device_info_plus: ^11.5.0
+  permission_handler: ^11.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.5
+
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/face-id.png
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: assets/face-id.png
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#ffffff"
+  image: assets/face-id.png
+  android_gravity: center
+  ios_content_mode: center
+  android_12:
+    image: assets/face-id.png
+    icon_background_color: "#ffffff"
