@@ -24,7 +24,7 @@ class MediaPipeFace extends StatefulWidget {
   State<MediaPipeFace> createState() => _MediaPipeFaceState();
 }
 
-class _MediaPipeFaceState extends State<MediaPipeFace> {
+class _MediaPipeFaceState extends State<MediaPipeFace> with SingleTickerProviderStateMixin {
   final CameraManager _cameraManager = CameraManager();
   final FaceMeshService _faceMeshService = FaceMeshService();
   final InputImageConverter _inputImageConverter = InputImageConverter();
@@ -44,6 +44,9 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
 
   OverlayEntry? _loadingOverlay;
 
+  late final AnimationController _hintController;
+  late final Animation<double> _hintScale;
+
   CameraImage? _latestCameraImage;
   Uint8List? _originBytes;
   InputImageMetadata? _inputImageMetadata;
@@ -52,6 +55,9 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
   @override
   void initState() {
     super.initState();
+    _hintController = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+    _hintScale = Tween<double>(begin: 0.85, end: 1.05).animate(CurvedAnimation(parent: _hintController, curve: Curves.easeInOut));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHintAnimation());
     _meshIndicesController = TextEditingController(text: _defaultMeshIndices.join(', '));
     unawaited(_initialize());
   }
@@ -87,6 +93,22 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
   void _hideLoadingOverlay() {
     _loadingOverlay?.remove();
     _loadingOverlay = null;
+  }
+
+  void _syncHintAnimation() {
+    if (!_isCameraReady) {
+      if (!_hintController.isAnimating) {
+        _hintController.value = _hintController.lowerBound;
+        _hintController.repeat(reverse: true);
+      }
+    } else {
+      if (_hintController.isAnimating) {
+        _hintController.stop();
+      }
+      if (_hintController.value != _hintController.lowerBound) {
+        _hintController.value = _hintController.lowerBound;
+      }
+    }
   }
 
   void _handleMeshIndicesChanged(String value) {
@@ -324,6 +346,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
   void dispose() {
     _hideLoadingOverlay();
     _meshIndicesController.dispose();
+    _hintController.dispose();
     unawaited(_cameraManager.dispose());
     unawaited(_faceMeshService.dispose());
     super.dispose();
@@ -344,7 +367,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
     final controller = _cameraManager.controller;
     final selectedCamera = _cameraManager.selectedCamera;
 
-    final isBackCamera = selectedCamera?.lensDirection == CameraLensDirection.back ?? true;
+    final isBackCamera = selectedCamera?.lensDirection == CameraLensDirection.back;
     final borderRadius = BorderRadius.circular(20.r);
     final borderRadius2 = BorderRadius.circular(18.r);
 
@@ -352,6 +375,11 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
     final isCameraAvailable = controller != null && controller.value.isInitialized && _isCameraReady;
 
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncHintAnimation();
+    });
 
     return AnimatedPadding(
       duration: const Duration(milliseconds: 200),
@@ -365,7 +393,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
-              physics: const ClampingScrollPhysics(),
+              physics: const BouncingScrollPhysics(),
               padding: EdgeInsets.only(bottom: 24.h),
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
@@ -477,31 +505,48 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
                       ],
                     ),
                     SizedBox(
-                      height: 80.h,
-                      child: Center(
-                        child: GestureDetector(
-                          onTap: _isCapturing ? null : _takePicture,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: 60.r,
-                            height: 60.r,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: _isCameraReady ? Colors.transparent : Colors.red.withOpacity(0.9), width: _isCameraReady ? 0 : 4.r),
-                            ),
-                            child: Center(
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                width: _isCameraReady ? 40.r : 40.r,
-                                height: _isCameraReady ? 40.r : 40.r,
-                                decoration: BoxDecoration(
-                                  color: _isCameraReady ? Colors.black : Colors.red,
-                                  borderRadius: BorderRadius.circular(_isCameraReady ? 8.r : 26.r),
+                      height: 90.h,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          GestureDetector(
+                            onTap: _isCapturing ? null : _takePicture,
+                            child: Container(
+                              width: 60.r,
+                              height: 60.r,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: _isCameraReady ? Colors.transparent : Colors.red.withOpacity(0.9), width: _isCameraReady ? 0 : 4.r),
+                              ),
+                              child: Center(
+                                child: Container(
+                                  width: _isCameraReady ? 40.r : 40.r,
+                                  height: _isCameraReady ? 40.r : 40.r,
+                                  decoration: BoxDecoration(
+                                    color: _isCameraReady ? Colors.black : Colors.red,
+                                    borderRadius: BorderRadius.circular(_isCameraReady ? 8.r : 26.r),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                          Positioned(
+                            bottom: 20.h,
+                            child: IgnorePointer(
+                              ignoring: true,
+                              child: AnimatedOpacity(
+                                opacity: _isCameraReady ? 0 : 1,
+                                duration: const Duration(milliseconds: 260),
+                                curve: Curves.easeOut,
+                                child: ScaleTransition(
+                                  scale: _hintScale,
+                                  child: Icon(Icons.touch_app, size: 30.r, color: Colors.black87),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     Padding(
