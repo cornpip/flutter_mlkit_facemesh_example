@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_mlkit_facemesh_example/mediapipe_face/painters/face_mesh_detector_painter.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_mlkit_face_mesh_detection/google_mlkit_face_mesh_detection.dart';
 import 'package:image/image.dart' as img;
@@ -13,7 +14,6 @@ import 'package:flutter_mlkit_facemesh_example/common/colors.dart';
 import 'package:flutter_mlkit_facemesh_example/mediapipe_face/services/camera_manager.dart';
 import 'package:flutter_mlkit_facemesh_example/mediapipe_face/services/face_mesh_service.dart';
 import 'package:flutter_mlkit_facemesh_example/mediapipe_face/services/input_image_converter.dart';
-import 'package:flutter_mlkit_facemesh_example/mediapipe_face/widgets/face_mesh_detector_painter.dart';
 import 'package:flutter_mlkit_facemesh_example/util/device_info.dart';
 import 'package:flutter_mlkit_facemesh_example/util/permission_util.dart';
 
@@ -35,6 +35,14 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
   bool _isCameraReady = false;
   bool _isDetecting = false;
   bool _imageLoaded = false;
+  bool _isCapturing = false;
+
+  static const List<int> _defaultMeshIndices = [412, 355, 278, 326, 97, 102, 126, 188, 6];
+
+  late final TextEditingController _meshIndicesController;
+  List<int> _customMeshIndices = List<int>.from(_defaultMeshIndices);
+
+  OverlayEntry? _loadingOverlay;
 
   CameraImage? _latestCameraImage;
   Uint8List? _originBytes;
@@ -44,6 +52,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
   @override
   void initState() {
     super.initState();
+    _meshIndicesController = TextEditingController(text: _defaultMeshIndices.join(', '));
     unawaited(_initialize());
   }
 
@@ -57,6 +66,45 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
     } catch (e) {
       debugPrint('Failed to get Android SDK version: $e');
     }
+  }
+
+  void _showLoadingOverlay() {
+    if (!mounted || _loadingOverlay != null) return;
+    final overlayState = Overlay.of(context, rootOverlay: true);
+
+    _loadingOverlay = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          ModalBarrier(color: Colors.black.withOpacity(0.6), dismissible: false),
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
+        ],
+      ),
+    );
+
+    overlayState.insert(_loadingOverlay!);
+  }
+
+  void _hideLoadingOverlay() {
+    _loadingOverlay?.remove();
+    _loadingOverlay = null;
+  }
+
+  void _handleMeshIndicesChanged(String value) {
+    final entries = value.split(',');
+    final parsed = <int>[];
+    for (final entry in entries) {
+      final trimmed = entry.trim();
+      if (trimmed.isEmpty) continue;
+      final index = int.tryParse(trimmed);
+      if (index != null) {
+        parsed.add(index);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _customMeshIndices = parsed;
+    });
   }
 
   Future<void> _initCamera({int cameraIndex = 1}) async {
@@ -96,7 +144,11 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
       final selectedCamera = _cameraManager.selectedCamera;
       if (controller == null || selectedCamera == null) return;
 
-      final inputImage = _inputImageConverter.fromCameraImage(image: image, controller: controller, camera: selectedCamera);
+      final inputImage = _inputImageConverter.fromCameraImage(
+        image: image,
+        controller: controller,
+        camera: selectedCamera,
+      );
 
       if (inputImage == null) return;
 
@@ -178,6 +230,12 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
     XFile? tempCapturedFile;
 
     try {
+      _showLoadingOverlay();
+      if (mounted) {
+        setState(() {
+          _isCapturing = true;
+        });
+      }
       final file = await controller.takePicture();
       final imageBytes = await file.readAsBytes();
       tempCapturedFile = file;
@@ -237,7 +295,12 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
       }
 
       final largestFace = _faceMeshService.findLargestFace(meshes);
-      final scaledMesh = _faceMeshService.scaleMesh(mesh: largestFace, originalSize: meshOriginalSize, targetSize: pictureSize, metadata: metadata);
+      final scaledMesh = _faceMeshService.scaleMesh(
+        mesh: largestFace,
+        originalSize: meshOriginalSize,
+        targetSize: pictureSize,
+        metadata: metadata,
+      );
 
       if (mounted) {
         setState(() {
@@ -248,6 +311,12 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
       debugPrint('stack trace: $st');
       debugPrint('Capture error: $e');
     } finally {
+      _hideLoadingOverlay();
+      if (mounted && _isCapturing) {
+        setState(() {
+          _isCapturing = false;
+        });
+      }
       if (tempCapturedFile != null) {
         final fileOnDisk = File(tempCapturedFile.path);
         if (await fileOnDisk.exists()) {
@@ -259,6 +328,8 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
 
   @override
   void dispose() {
+    _hideLoadingOverlay();
+    _meshIndicesController.dispose();
     unawaited(_cameraManager.dispose());
     unawaited(_faceMeshService.dispose());
     super.dispose();
@@ -286,97 +357,172 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
     final aspectRatio = _previewAspectRatio(controller);
     final isCameraAvailable = controller != null && controller.value.isInitialized && _isCameraReady;
 
-    return Stack(
-      children: [
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 20.w),
-          width: double.infinity,
-          height: double.infinity,
-          decoration: BoxDecoration(color: DEFAULT_BG),
-          child: Column(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(color: Colors.black, borderRadius: borderRadius),
-                    child: AspectRatio(
-                      aspectRatio: 3 / 4,
-                      child: Padding(
-                        padding: EdgeInsetsGeometry.symmetric(horizontal: 8.w, vertical: 8.h),
-                        child: ClipRRect(
-                          borderRadius: borderRadius2,
-                          child: OverflowBox(
-                            maxWidth: double.infinity,
-                            maxHeight: double.infinity,
-                            child: FittedBox(
-                              fit: BoxFit.contain,
-                              child: SizedBox(
-                                width: 300.w,
-                                child: Stack(
-                                  children: [
-                                    if (isCameraAvailable)
-                                      ClipRRect(borderRadius: borderRadius, child: CameraPreview(controller))
-                                    else
-                                      AspectRatio(
-                                        aspectRatio: aspectRatio != null && aspectRatio != 0 ? 1 / aspectRatio : 1,
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            Transform(
-                                              alignment: Alignment.center,
-                                              transform: isBackCamera ? Matrix4.identity() : (Matrix4.identity()..rotateY(math.pi)),
-                                              child: _originBytes != null
-                                                  ? Image.memory(
-                                                      _originBytes!,
-                                                      fit: BoxFit.cover,
-                                                      frameBuilder: (BuildContext context, Widget child, int? frame, bool wasSynchronouslyLoaded) {
-                                                        if (wasSynchronouslyLoaded || frame != null) {
-                                                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                            if (mounted && !_imageLoaded) {
-                                                              setState(() {
-                                                                _imageLoaded = true;
-                                                              });
-                                                            }
-                                                          });
-                                                          return child;
-                                                        } else {
-                                                          return Container(color: Colors.transparent);
-                                                        }
-                                                      },
-                                                    )
-                                                  : Container(color: Colors.transparent),
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 20.w),
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(color: DEFAULT_BG),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              padding: EdgeInsets.only(bottom: 24.h),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(color: Colors.black, borderRadius: borderRadius),
+                          child: AspectRatio(
+                            aspectRatio: 3 / 4,
+                            child: Padding(
+                              padding: EdgeInsetsGeometry.symmetric(horizontal: 8.w, vertical: 8.h),
+                              child: ClipRRect(
+                                borderRadius: borderRadius2,
+                                child: OverflowBox(
+                                  maxWidth: double.infinity,
+                                  maxHeight: double.infinity,
+                                  child: FittedBox(
+                                    fit: BoxFit.contain,
+                                    child: SizedBox(
+                                      width: 300.w,
+                                      child: Stack(
+                                        children: [
+                                          if (isCameraAvailable)
+                                            ClipRRect(borderRadius: borderRadius, child: CameraPreview(controller))
+                                          else
+                                            AspectRatio(
+                                              aspectRatio: aspectRatio != null && aspectRatio != 0
+                                                  ? 1 / aspectRatio
+                                                  : 1,
+                                              child: Stack(
+                                                fit: StackFit.expand,
+                                                children: [
+                                                  Transform(
+                                                    alignment: Alignment.center,
+                                                    transform: isBackCamera
+                                                        ? Matrix4.identity()
+                                                        : (Matrix4.identity()..rotateY(math.pi)),
+                                                    child: _originBytes != null
+                                                        ? Image.memory(
+                                                            _originBytes!,
+                                                            fit: BoxFit.cover,
+                                                            frameBuilder:
+                                                                (
+                                                                  BuildContext context,
+                                                                  Widget child,
+                                                                  int? frame,
+                                                                  bool wasSynchronouslyLoaded,
+                                                                ) {
+                                                                  if (wasSynchronouslyLoaded || frame != null) {
+                                                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                                      if (mounted && !_imageLoaded) {
+                                                                        setState(() {
+                                                                          _imageLoaded = true;
+                                                                        });
+                                                                      }
+                                                                    });
+                                                                    return child;
+                                                                  } else {
+                                                                    return Container(color: Colors.transparent);
+                                                                  }
+                                                                },
+                                                          )
+                                                        : Container(color: Colors.transparent),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
-                                          ],
-                                        ),
-                                      ),
-                                    if (_meshes.isNotEmpty && isCameraAvailable && _inputImageMetadata != null && selectedCamera != null)
-                                      Positioned.fill(
-                                        child: IgnorePointer(
-                                          child: CustomPaint(
-                                            painter: FaceMeshDetectorPainter(
-                                              _meshes,
-                                              _inputImageMetadata!.size,
-                                              _inputImageMetadata!.rotation,
-                                              selectedCamera.lensDirection,
+                                          if (_meshes.isNotEmpty &&
+                                              isCameraAvailable &&
+                                              _inputImageMetadata != null &&
+                                              selectedCamera != null)
+                                            Positioned.fill(
+                                              child: IgnorePointer(
+                                                child: CustomPaint(
+                                                  painter: FaceMeshDetectorPainter(
+                                                    _meshes,
+                                                    _inputImageMetadata!.size,
+                                                    _inputImageMetadata!.rotation,
+                                                    selectedCamera.lensDirection,
+                                                    highlightIndices: _customMeshIndices,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                      ),
-                                    if (_meshes.isNotEmpty && !isCameraAvailable && _imageLoaded && _inputImageMetadata != null && selectedCamera != null)
-                                      Positioned.fill(
-                                        child: IgnorePointer(
-                                          child: CustomPaint(
-                                            painter: FaceMeshDetectorPainter(
-                                              _meshes,
-                                              _inputImageMetadata!.size,
-                                              _inputImageMetadata!.rotation,
-                                              selectedCamera.lensDirection,
+                                          if (_meshes.isNotEmpty &&
+                                              !isCameraAvailable &&
+                                              _imageLoaded &&
+                                              _inputImageMetadata != null &&
+                                              selectedCamera != null)
+                                            Positioned.fill(
+                                              child: IgnorePointer(
+                                                child: CustomPaint(
+                                                  painter: FaceMeshDetectorPainter(
+                                                    _meshes,
+                                                    _inputImageMetadata!.size,
+                                                    _inputImageMetadata!.rotation,
+                                                    selectedCamera.lensDirection,
+                                                    highlightIndices: _customMeshIndices,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
+                                        ],
                                       ),
-                                  ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 10.h,
+                          right: 10.w,
+                          child: IconButton(
+                            icon: const Icon(Icons.cameraswitch),
+                            color: Colors.white,
+                            iconSize: 30.h,
+                            onPressed: controller != null ? _switchCamera : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(
+                      height: 80.h,
+                      child: Center(
+                        child: GestureDetector(
+                          onTap: _isCapturing ? null : _takePicture,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: 60.r,
+                            height: 60.r,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _isCameraReady ? Colors.transparent : Colors.red.withOpacity(0.9),
+                                width: _isCameraReady ? 0 : 4.r,
+                              ),
+                            ),
+                            child: Center(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                width: _isCameraReady ? 40.r : 40.r,
+                                height: _isCameraReady ? 40.r : 40.r,
+                                decoration: BoxDecoration(
+                                  color: _isCameraReady ? Colors.black : Colors.red,
+                                  borderRadius: BorderRadius.circular(_isCameraReady ? 8.r : 26.r),
                                 ),
                               ),
                             ),
@@ -384,51 +530,26 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
                         ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    top: 10.h,
-                    right: 10.w,
-                    child: IconButton(
-                      icon: const Icon(Icons.cameraswitch),
-                      color: Colors.white,
-                      iconSize: 30.h,
-                      onPressed: controller != null ? _switchCamera : null,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(
-                height: 100.h,
-                child: Center(
-                  child: GestureDetector(
-                    onTap: _takePicture,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 60.r,
-                      height: 60.r,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _isCameraReady ? Colors.transparent : Colors.red.withOpacity(0.9), width: _isCameraReady ? 0 : 4.r),
-                      ),
-                      child: Center(
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: _isCameraReady ? 40.r : 40.r,
-                          height: _isCameraReady ? 40.r : 40.r,
-                          decoration: BoxDecoration(
-                            color: _isCameraReady ? Colors.black : Colors.red,
-                            borderRadius: BorderRadius.circular(_isCameraReady ? 8.r : 26.r),
-                          ),
+                    Padding(
+                      padding: EdgeInsets.only(top: 12.h, bottom: 40.h),
+                      child: TextField(
+                        controller: _meshIndicesController,
+                        onChanged: _handleMeshIndicesChanged,
+                        keyboardType: TextInputType.text,
+                        textInputAction: TextInputAction.done,
+                        decoration: const InputDecoration(
+                          labelText: 'Face mesh landmark 0~467 (e.g.)',
+                          border: OutlineInputBorder(),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
-      ],
+      ),
     );
   }
 }
