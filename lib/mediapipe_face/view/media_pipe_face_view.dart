@@ -144,11 +144,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
       final selectedCamera = _cameraManager.selectedCamera;
       if (controller == null || selectedCamera == null) return;
 
-      final inputImage = _inputImageConverter.fromCameraImage(
-        image: image,
-        controller: controller,
-        camera: selectedCamera,
-      );
+      final inputImage = _inputImageConverter.fromCameraImage(image: image, controller: controller, camera: selectedCamera);
 
       if (inputImage == null) return;
 
@@ -180,6 +176,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
   Future<void> _switchCamera() async {
     if (!mounted) return;
 
+    _showLoadingOverlay();
     setState(() {
       _isCameraReady = false;
       _resetCapturedImage();
@@ -196,6 +193,8 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
     } catch (e, st) {
       debugPrint('Camera switch error: $e');
       debugPrint(st.toString());
+    } finally {
+      _hideLoadingOverlay();
     }
   }
 
@@ -295,12 +294,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
       }
 
       final largestFace = _faceMeshService.findLargestFace(meshes);
-      final scaledMesh = _faceMeshService.scaleMesh(
-        mesh: largestFace,
-        originalSize: meshOriginalSize,
-        targetSize: pictureSize,
-        metadata: metadata,
-      );
+      final scaledMesh = _faceMeshService.scaleMesh(mesh: largestFace, originalSize: meshOriginalSize, targetSize: pictureSize, metadata: metadata);
 
       if (mounted) {
         setState(() {
@@ -402,51 +396,38 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
                                             ClipRRect(borderRadius: borderRadius, child: CameraPreview(controller))
                                           else
                                             AspectRatio(
-                                              aspectRatio: aspectRatio != null && aspectRatio != 0
-                                                  ? 1 / aspectRatio
-                                                  : 1,
+                                              aspectRatio: aspectRatio != null && aspectRatio != 0 ? 1 / aspectRatio : 1,
                                               child: Stack(
                                                 fit: StackFit.expand,
                                                 children: [
                                                   Transform(
                                                     alignment: Alignment.center,
-                                                    transform: isBackCamera
-                                                        ? Matrix4.identity()
-                                                        : (Matrix4.identity()..rotateY(math.pi)),
+                                                    transform: isBackCamera ? Matrix4.identity() : (Matrix4.identity()..rotateY(math.pi)),
                                                     child: _originBytes != null
                                                         ? Image.memory(
                                                             _originBytes!,
                                                             fit: BoxFit.cover,
-                                                            frameBuilder:
-                                                                (
-                                                                  BuildContext context,
-                                                                  Widget child,
-                                                                  int? frame,
-                                                                  bool wasSynchronouslyLoaded,
-                                                                ) {
-                                                                  if (wasSynchronouslyLoaded || frame != null) {
-                                                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                                      if (mounted && !_imageLoaded) {
-                                                                        setState(() {
-                                                                          _imageLoaded = true;
-                                                                        });
-                                                                      }
+                                                            frameBuilder: (BuildContext context, Widget child, int? frame, bool wasSynchronouslyLoaded) {
+                                                              if (wasSynchronouslyLoaded || frame != null) {
+                                                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                                  if (mounted && !_imageLoaded) {
+                                                                    setState(() {
+                                                                      _imageLoaded = true;
                                                                     });
-                                                                    return child;
-                                                                  } else {
-                                                                    return Container(color: Colors.transparent);
                                                                   }
-                                                                },
+                                                                });
+                                                                return child;
+                                                              } else {
+                                                                return Container(color: Colors.transparent);
+                                                              }
+                                                            },
                                                           )
                                                         : Container(color: Colors.transparent),
                                                   ),
                                                 ],
                                               ),
                                             ),
-                                          if (_meshes.isNotEmpty &&
-                                              isCameraAvailable &&
-                                              _inputImageMetadata != null &&
-                                              selectedCamera != null)
+                                          if (_meshes.isNotEmpty && isCameraAvailable && _inputImageMetadata != null && selectedCamera != null)
                                             Positioned.fill(
                                               child: IgnorePointer(
                                                 child: CustomPaint(
@@ -460,11 +441,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
                                                 ),
                                               ),
                                             ),
-                                          if (_meshes.isNotEmpty &&
-                                              !isCameraAvailable &&
-                                              _imageLoaded &&
-                                              _inputImageMetadata != null &&
-                                              selectedCamera != null)
+                                          if (_meshes.isNotEmpty && !isCameraAvailable && _imageLoaded && _inputImageMetadata != null && selectedCamera != null)
                                             Positioned.fill(
                                               child: IgnorePointer(
                                                 child: CustomPaint(
@@ -510,10 +487,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
                             height: 60.r,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _isCameraReady ? Colors.transparent : Colors.red.withOpacity(0.9),
-                                width: _isCameraReady ? 0 : 4.r,
-                              ),
+                              border: Border.all(color: _isCameraReady ? Colors.transparent : Colors.red.withOpacity(0.9), width: _isCameraReady ? 0 : 4.r),
                             ),
                             child: Center(
                               child: AnimatedContainer(
@@ -537,10 +511,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> {
                         onChanged: _handleMeshIndicesChanged,
                         keyboardType: TextInputType.text,
                         textInputAction: TextInputAction.done,
-                        decoration: const InputDecoration(
-                          labelText: 'Face mesh landmark 0~467 (e.g.)',
-                          border: OutlineInputBorder(),
-                        ),
+                        decoration: const InputDecoration(labelText: 'Face mesh landmark 0~467 (e.g.)', border: OutlineInputBorder()),
                       ),
                     ),
                   ],

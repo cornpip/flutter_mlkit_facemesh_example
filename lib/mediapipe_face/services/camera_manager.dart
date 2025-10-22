@@ -115,6 +115,7 @@ class CameraManager {
     _controller = controller;
 
     await controller.initialize();
+    await controller.setFlashMode(FlashMode.off);
     await _startImageStream(
       controller: controller,
       onImage: onImage,

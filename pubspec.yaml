@@ -34,12 +34,15 @@ flutter:
   assets:
     - assets/face-id.png
 
+# flutter pub run flutter_launcher_icons
 flutter_icons:
   android: true
   ios: true
   image_path: assets/face-id.png
   remove_alpha_ios: true
 
+# flutter pub run flutter_native_splash:create
+# flutter pub run flutter_native_splash:remove
 flutter_native_splash:
   color: "#ffffff"
   image: assets/face-id.png
