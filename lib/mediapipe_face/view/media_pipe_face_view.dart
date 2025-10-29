@@ -294,7 +294,6 @@ class _MediaPipeFaceState extends State<MediaPipeFace> with SingleTickerProvider
           ? Size(latestCameraImage.height.toDouble(), latestCameraImage.width.toDouble())
           : const Size(720, 1280);
 
-      final isAndroid12OrAbove = DeviceInfo.isAndroidVersionAtLeast12(_androidSdkVersion);
       final selectedCamera = _cameraManager.selectedCamera;
       final isBackCamera = selectedCamera == null ? true : selectedCamera.lensDirection == CameraLensDirection.back;
 
@@ -302,7 +301,7 @@ class _MediaPipeFaceState extends State<MediaPipeFace> with SingleTickerProvider
         originalFile: savedFile,
         bytes: imageBytes,
         targetSize: meshOriginalSize,
-        isAndroid12OrAbove: isAndroid12OrAbove,
+        sdkInt: _androidSdkVersion,
         isBackCamera: isBackCamera,
       );
 

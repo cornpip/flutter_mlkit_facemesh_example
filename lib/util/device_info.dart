@@ -10,4 +10,8 @@ class DeviceInfo {
   static bool isAndroidVersionAtLeast12(int sdkInt) {
     return sdkInt >= 31;
   }
+
+  static bool isAndroidVersion13(int sdkInt) {
+    return sdkInt == 33;
+  }
 }

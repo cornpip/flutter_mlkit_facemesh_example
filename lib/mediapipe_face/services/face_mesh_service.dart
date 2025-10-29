@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_mlkit_facemesh_example/util/device_info.dart';
 import 'package:google_mlkit_face_mesh_detection/google_mlkit_face_mesh_detection.dart';
 import 'package:image/image.dart' as img;
 
@@ -129,11 +130,31 @@ class FaceMeshService {
     );
   }
 
+  img.Image resizedToVertical(img.Image original, Size targetSize) {
+    return img.copyResize(
+      original,
+      width: targetSize.width.toInt(),
+      height: targetSize.height.toInt(),
+    );
+  }
+
+  img.Image resizedToHorizontal(img.Image original, Size targetSize, bool isBackCamera) {
+    final rotated = img.copyRotate(
+      original,
+      angle: isBackCamera ? -90 : 90,
+    );
+    return img.copyResize(
+      rotated,
+      width: targetSize.height.toInt(),
+      height: targetSize.width.toInt(),
+    );
+  }
+
   Future<List<FaceMesh>> detectResizedMeshes({
     required File originalFile,
     required Uint8List bytes,
     required Size targetSize,
-    required bool isAndroid12OrAbove,
+    required int sdkInt,
     required bool isBackCamera,
   }) async {
     final original = img.decodeImage(bytes);
@@ -142,22 +163,12 @@ class FaceMeshService {
     }
 
     img.Image processed;
-    if (isAndroid12OrAbove) {
-      processed = img.copyResize(
-        original,
-        width: targetSize.width.toInt(),
-        height: targetSize.height.toInt(),
-      );
+    if (DeviceInfo.isAndroidVersion13(sdkInt)) {
+      processed = resizedToHorizontal(original, targetSize, isBackCamera);
+    } else if (DeviceInfo.isAndroidVersionAtLeast12(sdkInt)) {
+      processed = resizedToVertical(original, targetSize);
     } else {
-      final rotated = img.copyRotate(
-        original,
-        angle: isBackCamera ? -90 : 90,
-      );
-      processed = img.copyResize(
-        rotated,
-        width: targetSize.height.toInt(),
-        height: targetSize.width.toInt(),
-      );
+      processed = resizedToHorizontal(original, targetSize, isBackCamera);
     }
 
     final resizedBytes = img.encodeJpg(processed);
