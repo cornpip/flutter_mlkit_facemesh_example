@@ -1,11 +1,10 @@
-## flutter_mlkit_facemesh_example
+## flutter_mlkit_facemesh_sample
 
 ### Configuration
 - flutter_3.32.7
 
 ### Support
-- Android 10 or higher
-- IOS X
+- Android
 
 ### Usage
 
